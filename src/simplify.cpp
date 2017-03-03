@@ -6,10 +6,6 @@
 #include <deque>
 
 
-//#define DEBUG
-#define COLOR
-
-
 using namespace Eigen;
 using namespace std;
 
@@ -19,19 +15,24 @@ enum collapse_method {
   COLLAPSE_TO_MEAN
 };
 
-inline Vector4f homogenous(const Vector3f &vec) {
-  return Vector4f(vec[0], vec[1], vec[2], 1);
+inline VectorXf homogenous(const VectorXf &vec) {
+
+	VectorXf ret(vec.size() + 1);
+	for (int i = 0; i < vec.size(); i++)
+		ret(i) = vec(i);
+	ret(vec.size()) = 1.0;
+	return ret;
 }
 
-float error(const Vector4f &homo, const Matrix4f &Q) {
+float error(const VectorXf &homo, const MatrixXf &Q) {
   return abs((float) (homo.transpose() * Q * homo));
 }
 
 class contraction {
   public:
     vertpair vp;
-    Matrix4f Q;
-    Vector4f loc;
+    MatrixXf Q;
+    VectorXf loc;
     collapse_method method;
     float resultError;
 
@@ -40,16 +41,16 @@ public:
 
     contraction(
         const vertpair &vertp, const vector<vertex*> &verteces,
-        const vector<Matrix4f, Eigen::aligned_allocator<Eigen::Vector4f>> &initialQ) {
+        const vector<MatrixXf, Eigen::aligned_allocator<Eigen::MatrixXf>> &initialQ) {
       vp = vertp;
       findMinError(verteces, initialQ);
     }
 
     void findMinError(const vector<vertex*> &verteces,
-        const vector<Matrix4f, Eigen::aligned_allocator<Eigen::Vector4f>> &initialQ) {
-      Vector4f loc_v1 = homogenous(verteces[vp.first]->loc);
-      Vector4f loc_v2 = homogenous(verteces[vp.second]->loc);
-      Vector4f loc_vm = (loc_v1 + loc_v2) / 2;
+        const vector<MatrixXf, Eigen::aligned_allocator<Eigen::MatrixXf>> &initialQ) {
+      VectorXf loc_v1 = homogenous(verteces[vp.first]->m_vp);
+      VectorXf loc_v2 = homogenous(verteces[vp.second]->m_vp);
+      VectorXf loc_vm = (loc_v1 + loc_v2) / 2;
 
       Q = initialQ[vp.first] + initialQ[vp.second];
 
@@ -86,7 +87,7 @@ public:
       return vid == vp.first || vid == vp.second;
     }
 
-    void perform(vector<vertex*> &verteces, vector<Matrix4f, Eigen::aligned_allocator<Eigen::Vector4f>> &initialQ,
+    void perform(vector<vertex*> &verteces, vector<MatrixXf, Eigen::aligned_allocator<Eigen::MatrixXf>> &initialQ,
         vector<vector<face*> > &vertexToFaces,
         set<int> &facesToRemove, deque<contraction, Eigen::aligned_allocator<contraction>> &edges,
         set<vertpair> &existingedges) {
@@ -98,10 +99,10 @@ public:
        * we're merging to v2, we move v1 to v2 and remove v2. */
       int keep = vp.first, remove = vp.second;
       if (method == COLLAPSE_TO_MEAN) {
-        verteces[keep]->loc += verteces[remove]->loc;
-        verteces[keep]->loc /= 2;
+        verteces[keep]->m_vp += verteces[remove]->m_vp;
+        verteces[keep]->m_vp /= 2;
       } else if (method == COLLAPSE_TO_V2) {
-        verteces[keep]->loc = verteces[remove]->loc;
+        verteces[keep]->m_vp = verteces[remove]->m_vp;
       }
 
       /* Find all old faces on v2 */
@@ -136,6 +137,8 @@ public:
           facesToRemove.insert(f->id);
         }
       }
+
+	  faces.clear();
 
       /* Update edge heap */
       deque<int> edgesToRemove;
@@ -197,12 +200,15 @@ void simplifyMesh(mesh &mesh, float factor) {
     return;
   }
 
+  mesh.perservefeature(Position);
+  const int N_Vec = 3 * 1;
   /*
     1. Compute the Q matrices for all the initial vertices.
     2. Select all valid pairs
   */
   vector<vertex*> verteces(mesh.max_vertex_id + 1, NULL);
-  vector<Matrix4f, Eigen::aligned_allocator<Eigen::Vector4f>> initialQ(mesh.max_vertex_id + 1,Matrix4f::Zero());
+  vector<MatrixXf, Eigen::aligned_allocator<Eigen::MatrixXf>> initialQ(mesh.max_vertex_id + 1, MatrixXf::Zero(N_Vec + 1,N_Vec + 1));
+
 
   vector<vector<face*> > vertexToFaces(mesh.max_vertex_id + 1, vector<face*>());
 
@@ -211,39 +217,27 @@ void simplifyMesh(mesh &mesh, float factor) {
   for (int i = 0; i < mesh.faces.size(); i++) {
     face *f = mesh.faces[i];
 
-    Vector3f v1 = f->verts[0]->loc,
-		     r1 = f->verts[0]->color,
-             v2 = f->verts[1]->loc,
-		     r2 = f->verts[0]->color,
-             v3 = f->verts[2]->loc,
-		     r3 = f->verts[0]->color;
+	VectorXf v1 = f->verts[0]->m_vp,
+		v2 = f->verts[1]->m_vp,
+		v3 = f->verts[2]->m_vp;
 
-    /* equation thanks to Paul Bourke http://paulbourke.net/geometry/planeeq/ */
-#ifdef COLOR
-	VectorXf p(6),q(6),r(6);
-	p(0) = v1(0), p(1) = v1(1), p(2) = v1(2), p(4) = r1(0), p(5) = r1(1), p(6) = r1(2),
-	q(0) = v1(0), q(1) = v1(1), q(2) = v1(2), q(4) = r1(0), q(5) = r1(1), q(6) = r1(2),
-	r(0) = v1(0), r(1) = v1(1), r(2) = v1(2), r(4) = r1(0), r(5) = r1(1), r(6) = r1(2);
-	VectorXf e1 = (q - p);
+	VectorXf e1 = (v2 - v1);
 	e1 = e1 / e1.norm();
-	VectorXf e2 = (r - p - (e1.dot(r-p))*(e1));
+	VectorXf e2 = (v3 - v1 - (e1.dot(v3- v1))*(e1));
 	e2 = e2 / e2.norm();
-	Matrix4f pp;
-	Matrix3f A = Matrix3f::Identity() - e1 * e1.transpose() - e2 * e2.transpose();
-	Vector3f b = (p.dot(e1))* e1 + (p.dot(e2))*e2 - p;
-	float c = p.dot(p) - (p.dot(e1)) * (p.dot(e1)) - (p.dot(e2)) * (p.dot(e2));
-    
-#else
-    Vector4f p;
-    p[0] = v1[1] * (v2[2] - v3[2]) + v2[1] * (v3[2] - v1[2]) + v3[1] * (v1[2] - v2[2]);
-    p[1] = v1[2] * (v2[0] - v3[0]) + v2[2] * (v3[0] - v1[0]) + v3[2] * (v1[0] - v2[0]);
-    p[2] = v1[0] * (v2[1] - v3[1]) + v2[0] * (v3[1] - v1[1]) + v3[0] * (v1[1] - v2[1]);
-    p[3] = -(v1[0] * (v2[1] * v3[2] - v3[1] * v2[2]) +
-        v2[0] * (v3[1] * v1[2] - v1[1] * v3[2]) +
-        v3[0] * (v1[1] * v2[2] - v2[1] * v1[2]));
+	MatrixXf A = MatrixXf::Identity(N_Vec, N_Vec) - e1 * e1.transpose() - e2 * e2.transpose();
+	VectorXf b = (v1.dot(e1))* e1 + (v1.dot(e2))*e2 - v1;
+	float c = v1.dot(v1) - (v1.dot(e1)) * (v1.dot(e1)) - (v1.dot(e2)) * (v1.dot(e2));
+	MatrixXf pp = MatrixXf::Zero(N_Vec + 1, N_Vec + 1);
+	for (int j = 0; j < N_Vec; j++)
+	{
+		for (int k = 0; k < N_Vec; k++)
+			pp(j, k) = A(j, k);
 
-    Matrix4f pp = p * p.transpose();
-#endif
+		pp(j, N_Vec) = b(j);
+		pp(N_Vec, j) = b(j);
+	}
+	pp(N_Vec, N_Vec) = c;
 
     for (auto v_iter = f->verts.begin();
         v_iter != f->verts.end(); v_iter++) {
@@ -284,48 +278,10 @@ void simplifyMesh(mesh &mesh, float factor) {
 
   int target_edges = (int) (factor * (float) edges.size());
   while (edges.size() > target_edges) {
-#ifdef DEBUG
-    cout << "\n\nSTART OF ITERATION\nedges: " << edges.size() << endl;
-    for (int i = 0; i < mesh.faces.size(); i++) {
-      if (facesToRemove.find(mesh.faces[i]->id) == facesToRemove.end()) {
-        cout << "face " << mesh.faces[i]->id << ": " <<
-          mesh.faces[i]->verts[0]->id << " " <<
-          mesh.faces[i]->verts[1]->id << " " <<
-          mesh.faces[i]->verts[2]->id << endl;
-      }
-    }
-
-    for (int i = 0; i < edges.size(); i++) {
-      cout << "edge " << edges[i].vp.first << " " << edges[i].vp.second << endl;
-    }
-#endif
 
     contraction best = popmin(edges);
     best.perform(verteces, initialQ, vertexToFaces, facesToRemove, edges, edgeset);
 
-#ifdef DEBUG
-    cout << "\nEND OF ITERATION\nedges: " << edges.size() << endl;
-    for (int i = 0; i < mesh.faces.size(); i++) {
-      if (facesToRemove.find(mesh.faces[i]->id) == facesToRemove.end()) {
-        cout << "face " << mesh.faces[i]->id << ": " <<
-          mesh.faces[i]->verts[0]->id << " " <<
-          mesh.faces[i]->verts[1]->id << " " <<
-          mesh.faces[i]->verts[2]->id << endl;
-      }
-    }
-
-    for (int i = 0; i < edges.size(); i++) {
-      cout << "edge " << edges[i].vp.first << " " << edges[i].vp.second << endl;
-    }
-
-    for (int i = 1; i < vertexToFaces.size(); i++) {
-      cout << "vertex " << i << ": ";
-      for (int j = 0; j < vertexToFaces[i].size(); j++) {
-        cout << vertexToFaces[i][j]->id << " ";
-      }
-      cout << endl;
-    }
-#endif
   }
 
   vector<face*> newfaces;

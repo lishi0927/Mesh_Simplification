@@ -15,6 +15,13 @@ enum normal_mode {
   ANGLE_WEIGHTS
 };
 
+enum Feature {
+	Position,
+	Position_Color,
+	Position_Normal,
+	Position_Normal_Color
+};
+
 typedef pair<int, int> vertpair;
 vertpair makeVertpair(int v1, int v2);
 
@@ -28,6 +35,8 @@ class vertex {
     Vector3f loc;
 	Vector3f color;
     Vector3f normal;
+
+	VectorXf m_vp; // e.g. p = [px, py, pz, pr, pg, pb]T;
 
 public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -50,6 +59,8 @@ class mesh {
   public:
     mesh();
     void calculateNormals(normal_mode mode);
+
+	void perservefeature(Feature mode);
 
     vector<face*> faces;
     bool manifold;

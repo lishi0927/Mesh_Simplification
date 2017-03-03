@@ -42,6 +42,38 @@ mesh::mesh() {
   manifold = false;
 }
 
+void mesh::perservefeature(Feature mode)
+{
+	for (auto it = faces.begin(); it != faces.end(); it++) {
+		face *f = *it;
+		for (auto vit = f->verts.begin(); vit != f->verts.end(); vit++) {
+			if (mode == Position)
+			{
+				(*vit)->m_vp.resize(3);
+				(*vit)->m_vp = (*vit)->loc;
+		    }
+			else if (mode == Position_Color)
+			{
+				(*vit)->m_vp.resize(6);
+				for(int i = 0; i<3; i++)
+				{
+					(*vit)->m_vp(i) = (*vit)->loc(i);
+					(*vit)->m_vp(i + 3) = (*vit)->color(i);
+				}
+				
+			}
+			else if (mode == Position_Normal)
+			{
+
+			}
+			else if (mode == Position_Normal_Color)
+			{
+
+			}
+		}
+	}
+}
+
 void mesh::calculateNormals(normal_mode mode) {
   for (auto it = faces.begin(); it != faces.end(); it++) {
     face *f = *it;
