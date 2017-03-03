@@ -1,0 +1,40 @@
+set(THIS_TARGET simplification)
+project (${THIS_TARGET})
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)  
+#Appends the cmake/modules path inside the MAKE_MODULE_PATH variable which stores the  
+# directories of additional CMake modules   
+SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules ${CMAKE_MODULE_PATH})  
+  
+# Find includes in corresponding build directories
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+# Instruct CMake to run moc automatically when needed
+set(CMAKE_AUTOMOC ON)
+
+
+include_directories(
+	.
+	include/
+)
+
+set(${THIS_TARGET}_HEADER_FILES
+	src/drawmesh.h
+	src/glinclude.h
+	src/mesh.h
+	src/objparse.h
+	src/simplify.h
+	src/trackball.h
+)
+
+set(${THIS_TARGET}_SOURCE_FILES
+	src/drawmesh.cpp
+	src/main.cpp
+	src/mesh.cpp
+	src/objparse.cpp
+	src/simplify.cpp
+	src/trackball.cpp
+)
+
+add_executable(${THIS_TARGET} 
+	${${THIS_TARGET}_HEADER_FILES}
+	${${THIS_TARGET}_SOURCE_FILES}
+)
